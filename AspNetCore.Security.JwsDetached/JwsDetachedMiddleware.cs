@@ -3,6 +3,7 @@ using System.Threading.Tasks;
 using JwsDetachedStreaming;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
+using Newtonsoft.Json.Linq;
 
 namespace AspNetCore.Security.JwsDetached
 {
@@ -86,7 +87,16 @@ namespace AspNetCore.Security.JwsDetached
                 payloadStream.Position = 0;
 
                 var handler = new JwsDetachedHandler();
-                var jwsHeader = handler.Read(jwsDetached, verifierResolver, payloadStream);
+
+                JObject? jwsHeader;
+                try
+                {
+                    jwsHeader = handler.Read(jwsDetached, verifierResolver, payloadStream);
+                }
+                catch (Exception ex)
+                {
+                    throw new JwsDetachedException(JwsDetachedType.ReadError, ex);
+                }
 
                 if (jwsHeader == null)
                 {

@@ -1,8 +1,9 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>netcoreapp3.1</TargetFramework>
-
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <Nullable>enable</Nullable>
     <IsPackable>false</IsPackable>
   </PropertyGroup>
 
@@ -16,6 +17,12 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AspNetCore.Security.JwsDetached\AspNetCore.Security.JwsDetached.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Provision\cert.pfx.test">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 
 </Project>

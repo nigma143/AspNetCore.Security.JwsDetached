@@ -5,14 +5,23 @@ namespace AspNetCore.Security.JwsDetached.DependencyInjection
 {
     public static class JwsDetachedServiceCollectionExtensions
     {
-        public static IServiceCollection AddJwsDetached(this IServiceCollection services, Action<JwsDetachedOptions> configure)
+        public static IServiceCollection AddJwsDetached<TV, TS>(this IServiceCollection services)
+            where TV : class, IVerifierResolverSelector
+            where TS : class, ISignContextSelector
         {
-            if (services == null)
-                throw new ArgumentNullException(nameof(services));
-            if (configure == null)
-                throw new ArgumentNullException(nameof(configure));
+            return services.AddJwsDetached<TV, TS>(_ => { });
+        }
 
+
+        public static IServiceCollection AddJwsDetached<TV, TS>(this IServiceCollection services,
+            Action<JwsDetachedOptions> configure)
+            where TV : class, IVerifierResolverSelector
+            where TS : class, ISignContextSelector
+        {
             services.Configure(configure);
+
+            services.AddSingleton<IVerifierResolverSelector, TV>();
+            services.AddSingleton<ISignContextSelector, TS>();
 
             return services;
         }

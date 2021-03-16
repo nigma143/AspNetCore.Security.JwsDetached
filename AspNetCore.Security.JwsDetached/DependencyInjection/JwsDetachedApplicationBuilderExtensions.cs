@@ -9,11 +9,6 @@ namespace AspNetCore.Security.JwsDetached.DependencyInjection
     {
         public static IApplicationBuilder UseHttpJwsDetached(this IApplicationBuilder app)
         {
-            if (app == null)
-                throw new ArgumentNullException(nameof(app));
-
-            var options = app.ApplicationServices.GetRequiredService<IOptions<JwsDetachedOptions>>();
-
             return app.UseMiddleware<JwsDetachedMiddleware>();
         }
     }

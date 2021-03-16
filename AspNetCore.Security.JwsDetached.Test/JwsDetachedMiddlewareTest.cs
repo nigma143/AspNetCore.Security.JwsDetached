@@ -2,14 +2,20 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Threading.Tasks;
+using AspNetCore.Security.JwsDetached.DependencyInjection;
 using JwsDetachedStreaming;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using Newtonsoft.Json.Linq;
 
 namespace AspNetCore.Security.JwsDetached.Test
 {
@@ -17,75 +23,141 @@ namespace AspNetCore.Security.JwsDetached.Test
     public class JwsDetachedMiddlewareTest
     {
         [TestMethod]
-        public void TestMethod1()
-        {/*
+        public async Task TestMethod1()
+        {
             using var host = await new HostBuilder()
-                                   .ConfigureWebHost(webBuilder =>
-                                   {
-                                       webBuilder
-                                           .UseTestServer()
-                                           .ConfigureServices(services =>
-                                           {
-                                               services.Configure<JwsDetachedOptions>(
-                                                   options =>
-                                                   {
-                                                       options.Signing = new SigningOptions()
-                                                       {
-                                                           Algorithm = "HS256",
-                                                           KeySource = SigningKeySource.SymmetricKeyFromFile,
-                                                           FileOptions = new SigningKeySourceFileOptions()
-                                                           {
-                                                               FileName = hs256KeyFileName
-                                                           }
-                                                       };
-                                                   });
-                                           })
-                                           .Configure(app =>
-                                           {
-                                               app
-                                                   .UseMiddleware<JwsDetachedMiddleware>()
-                                                   .Use(async (context, next) =>
-                                                   {
-                                                       var jwsDetached = context.Request.Headers["X-JWS-Signature"]
-                                                                                .Single();
+                .ConfigureWebHost(webBuilder =>
+                {
+                    webBuilder
+                        .UseTestServer()
+                        .ConfigureServices(services =>
+                        {
+                            services.AddJwsDetached<VerifierResolverSelector, SignContextSelector>();
+                        })
+                        .Configure(app =>
+                        {
+                            app
+                                .UseHttpJwsDetached()
+                                .Run(async context =>
+                                {
+                                    context.Response.StatusCode = 200;
+                                    await context.Response.Body.WriteAsync(
+                                        Encoding.UTF8.GetBytes("Response body"));
+                                });
+                        });
+                })
+                .StartAsync();
 
-                                                       var jwsDetachedParts = jwsDetached.Split('.');
+            host.GetTestServer().AllowSynchronousIO = true;
+            
+            var handler = new JwsDetachedHandler();
+            var jwsDetached = handler.Write(new JObject(), "PS256", new SignerResolver(),
+                new MemoryStream(Encoding.UTF8.GetBytes("Request body")));
 
-                                                       var payloadMs = new MemoryStream();
+            var client = host.GetTestClient();
+            client.DefaultRequestHeaders.Add("x-jws-signature", jwsDetached);
 
-                                                       context.Request.Body.Position = 0;
-                                                       await context.Request.Body.CopyToAsync(payloadMs);
-
-                                                       var encodedPayload = Base64UrlEncoder.Encode(payloadMs.ToArray());
-
-                                                       var jws = string.Concat(jwsDetachedParts[0], ".", encodedPayload, ".", jwsDetachedParts[2]);
-
-                                                       var handler = new JsonWebSignatureHandler();
-
-                                                       handler.Validate(jws, new SymmetricSecurityKey(
-                                                                            Convert.FromBase64String(
-                                                                                await File.ReadAllTextAsync(hs256KeyFileName, Encoding.UTF8))));
-
-                                                       await next.Invoke();
-                                                   })
-                                                   .Run(async context =>
-                                                   {
-                                                       context.Response.StatusCode = 200;
-                                                       await context.Response.Body.WriteAsync(
-                                                           Encoding.UTF8.GetBytes("Response body"));
-                                                   });
-                                           });
-                                   })
-                                   .StartAsync();
-
-            var response = await host.GetTestClient()
-                                     .PostAsync("/", new ByteArrayContent(Encoding.UTF8.GetBytes("Request body")));
+            var response = await client.PostAsync("/", new ByteArrayContent(Encoding.UTF8.GetBytes("Request body")));
             response.EnsureSuccessStatusCode();
+
+            Assert.IsTrue(response.Headers.Contains("x-jws-signature"));
 
             var contentRaw = await response.Content.ReadAsByteArrayAsync();
 
             Assert.IsTrue(contentRaw.SequenceEqual(
-                              Encoding.UTF8.GetBytes("Response body")));*/
+                Encoding.UTF8.GetBytes("Response body")));
+        }
+    }
+
+    class VerifierResolverSelector : IVerifierResolverSelector
+    {
+        public IVerifierResolver? Select(HttpContext context)
+        {
+            return new VerifierResolver();
+        }
+    }
+
+    class SignContextSelector : ISignContextSelector
+    {
+        public SignContext? Select(HttpContext context)
+        {
+            return new SignContext("PS256", new JObject(), new SignerResolver());
+        }
+    }
+
+    class SignerResolver : ISignerResolver
+    {
+        private readonly X509Certificate2 _certificate;
+
+        public SignerResolver()
+        {
+            _certificate = new X509Certificate2("Provision/cert.pfx.test", "123456");
+        }
+
+        public ISigner Resolve(JObject header)
+        {
+            return header.GetValue("alg").ToString() switch
+            {
+                "PS256" => new SignerPs256(_certificate),
+                _ => throw new NotSupportedException("Signature algorithm not supported")
+            };
+        }
+    }
+
+    class SignerPs256 : ISigner
+    {
+        private readonly X509Certificate2 _certificate;
+
+        public SignerPs256(X509Certificate2 certificate)
+        {
+            _certificate = certificate;
+        }
+
+        public byte[] Sign(Stream inputStream)
+        {
+            using var sha256 = SHA256.Create();
+            var hash = sha256.ComputeHash(inputStream);
+
+            using var privateKey = _certificate.GetRSAPrivateKey();
+            return privateKey.SignHash(hash, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+        }
+    }
+
+    class VerifierResolver : IVerifierResolver
+    {
+        private readonly X509Certificate2 _certificate;
+
+        public VerifierResolver()
+        {
+            _certificate = new X509Certificate2("Provision/cert.pfx.test", "123456");
+        }
+
+        public IVerifier Resolve(JObject header)
+        {
+            return header.GetValue("alg").ToString() switch
+            {
+                "PS256" => new VerifierPs256(_certificate),
+                _ => throw new NotSupportedException("Signature algorithm not supported")
+            };
+        }
+    }
+
+    class VerifierPs256 : IVerifier
+    {
+        private readonly X509Certificate2 _certificate;
+
+        public VerifierPs256(X509Certificate2 certificate)
+        {
+            _certificate = certificate;
+        }
+
+        public bool Verify(Stream inputStream, byte[] signature)
+        {
+            using var sha256 = SHA256.Create();
+            var hash = sha256.ComputeHash(inputStream);
+
+            using var privateKey = _certificate.GetRSAPrivateKey();
+            return privateKey.VerifyHash(hash, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
         }
     }
 }

@@ -8,7 +8,7 @@
         /// <summary>
         /// HttpRequest.Body buffering type
         /// </summary>
-        public RequestBufferingType? RequestBufferingType { get; set; }
+        public BufferingType? RequestBufferingType { get; set; }
 
         /// <summary>
         /// File buffering options
@@ -18,19 +18,19 @@
         /// <summary>
         /// HttpResponse.Body buffering
         /// </summary>
-        public ResponseBufferingType? ResponseBufferingType { get; set; }
+        public BufferingType? ResponseBufferingType { get; set; }
+
+        /// <summary>
+        /// File buffering options
+        /// </summary>
+        public FileBufferingOptions? ResponseFileBufferingOptions { get; set; }
     }
 
     /// <summary>
-    /// HttpRequest.Body buffering type
+    /// Buffering type
     /// </summary>
-    public enum RequestBufferingType
+    public enum BufferingType
     {
-        /// <summary>
-        /// Buffering is Disabled
-        /// </summary>
-        Disabled,
-
         /// <summary>
         /// File buffering
         /// </summary>
@@ -41,23 +41,7 @@
         /// </summary>
         Memory
     }
-
-    /// <summary>
-    /// HttpResponse.Body buffering type
-    /// </summary>
-    public enum ResponseBufferingType
-    {
-        /// <summary>
-        /// Buffering is Disabled
-        /// </summary>
-        Disabled,
-
-        /// <summary>
-        /// Memory buffering
-        /// </summary>
-        Memory
-    }
-
+    
     /// <summary>
     /// File buffering options
     /// </summary>
