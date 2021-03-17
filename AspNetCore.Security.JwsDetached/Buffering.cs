@@ -61,7 +61,7 @@ namespace AspNetCore.Security.JwsDetached
 
             var originRequestStream = request.Body;
 
-            var fileStream = new SuppressFlushExceptionFileBufferingReadStream(body, bufferThreshold, bufferLimit, () => tempDirectory);
+            var fileStream = new FileBufferingReadStream(body, bufferThreshold, bufferLimit, () => tempDirectory);
             request.Body = fileStream;
 
             return new ActionAtDispose(
@@ -179,33 +179,6 @@ namespace AspNetCore.Security.JwsDetached
         public async ValueTask DisposeAsync()
         {
             await _action();
-        }
-    }
-
-    class SuppressFlushExceptionFileBufferingReadStream : FileBufferingReadStream
-    {
-        public SuppressFlushExceptionFileBufferingReadStream(Stream inner, int memoryThreshold) : base(inner, memoryThreshold)
-        {
-        }
-
-        public SuppressFlushExceptionFileBufferingReadStream(Stream inner, int memoryThreshold, long? bufferLimit, Func<string> tempFileDirectoryAccessor) : base(inner, memoryThreshold, bufferLimit, tempFileDirectoryAccessor)
-        {
-        }
-
-        public SuppressFlushExceptionFileBufferingReadStream(Stream inner, int memoryThreshold, long? bufferLimit, Func<string> tempFileDirectoryAccessor, ArrayPool<byte> bytePool) : base(inner, memoryThreshold, bufferLimit, tempFileDirectoryAccessor, bytePool)
-        {
-        }
-
-        public SuppressFlushExceptionFileBufferingReadStream(Stream inner, int memoryThreshold, long? bufferLimit, string tempFileDirectory) : base(inner, memoryThreshold, bufferLimit, tempFileDirectory)
-        {
-        }
-
-        public SuppressFlushExceptionFileBufferingReadStream(Stream inner, int memoryThreshold, long? bufferLimit, string tempFileDirectory, ArrayPool<byte> bytePool) : base(inner, memoryThreshold, bufferLimit, tempFileDirectory, bytePool)
-        {
-        }
-
-        public override void Flush()
-        {
         }
     }
 }

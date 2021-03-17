@@ -5,7 +5,9 @@ VisualStudioVersion = 16.0.30011.22
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AspNetCore.Security.JwsDetached", "AspNetCore.Security.JwsDetached\AspNetCore.Security.JwsDetached.csproj", "{B07D24F3-0835-4692-9CA7-B9A2120461E5}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AspNetCore.Security.JwsDetached.Test", "AspNetCore.Security.JwsDetached.Test\AspNetCore.Security.JwsDetached.Test.csproj", "{0344A298-CA9B-468A-B9CB-2B4686BF8E98}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AspNetCore.Security.JwsDetached.Test", "AspNetCore.Security.JwsDetached.Test\AspNetCore.Security.JwsDetached.Test.csproj", "{0344A298-CA9B-468A-B9CB-2B4686BF8E98}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AspNetCore.Security.JwsDetached.Example", "AspNetCore.Security.JwsDetached.Example\AspNetCore.Security.JwsDetached.Example.csproj", "{D46C6B36-A24D-4F9D-8CF6-A9752EF29B57}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -21,6 +23,10 @@ Global
 		{0344A298-CA9B-468A-B9CB-2B4686BF8E98}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{0344A298-CA9B-468A-B9CB-2B4686BF8E98}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{0344A298-CA9B-468A-B9CB-2B4686BF8E98}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D46C6B36-A24D-4F9D-8CF6-A9752EF29B57}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D46C6B36-A24D-4F9D-8CF6-A9752EF29B57}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D46C6B36-A24D-4F9D-8CF6-A9752EF29B57}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D46C6B36-A24D-4F9D-8CF6-A9752EF29B57}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

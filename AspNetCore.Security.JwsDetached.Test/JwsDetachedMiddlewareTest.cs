@@ -23,7 +23,7 @@ namespace AspNetCore.Security.JwsDetached.Test
     public class JwsDetachedMiddlewareTest
     {
         [TestMethod]
-        public async Task TestMethod1()
+        public async Task CommonTest()
         {
             using var host = await new HostBuilder()
                 .ConfigureWebHost(webBuilder =>
@@ -33,21 +33,19 @@ namespace AspNetCore.Security.JwsDetached.Test
                         .ConfigureServices(services =>
                         {
                             services.AddJwsDetached<VerifierResolverSelector, SignContextSelector>();
+                            services.AddControllers();
                         })
                         .Configure(app =>
                         {
                             app
                                 .UseHttpJwsDetached()
-                                .Run(async context =>
-                                {
-                                    context.Response.StatusCode = 200;
-                                    await context.Response.Body.WriteAsync(
-                                        Encoding.UTF8.GetBytes("Response body"));
-                                });
+                                .UseRouting()
+                                .UseEndpoints(builder =>
+                                    builder.Map("/", context => context.Response.WriteAsync("Response body")));
                         });
                 })
                 .StartAsync();
-
+            
             host.GetTestServer().AllowSynchronousIO = true;
             
             var handler = new JwsDetachedHandler();
@@ -57,10 +55,16 @@ namespace AspNetCore.Security.JwsDetached.Test
             var client = host.GetTestClient();
             client.DefaultRequestHeaders.Add("x-jws-signature", jwsDetached);
 
-            var response = await client.PostAsync("/", new ByteArrayContent(Encoding.UTF8.GetBytes("Request body")));
+            var response = await client.PostAsync("/", new StringContent("Request body"));
             response.EnsureSuccessStatusCode();
 
             Assert.IsTrue(response.Headers.Contains("x-jws-signature"));
+            
+            var jwsHeaders = handler.Read(String.Join("", response.Headers.GetValues("x-jws-signature")), 
+                new VerifierResolver(),
+                await response.Content.ReadAsStreamAsync());
+
+            Assert.IsNotNull(jwsHeaders);
 
             var contentRaw = await response.Content.ReadAsByteArrayAsync();
 
@@ -141,7 +145,7 @@ namespace AspNetCore.Security.JwsDetached.Test
             };
         }
     }
-
+    
     class VerifierPs256 : IVerifier
     {
         private readonly X509Certificate2 _certificate;

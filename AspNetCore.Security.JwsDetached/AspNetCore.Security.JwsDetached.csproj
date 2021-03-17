@@ -4,6 +4,14 @@
     <TargetFramework>netcoreapp3.1</TargetFramework>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <Nullable>enable</Nullable>
+    <Authors>Irek Nigmatullin &lt;nigma143@mail.ru&gt;</Authors>
+    <Description>ASP.NET Core middleware to sign and verify detached jws</Description>
+    <PackageLicenseFile>LICENSE</PackageLicenseFile>
+    <PackageProjectUrl>https://github.com/nigma143/AspNetCore.Security.JwsDetached</PackageProjectUrl>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/nigma143/AspNetCore.Security.JwsDetached</RepositoryUrl>
+    <PackageTags>middleware aspnetcore jws detached detached-payload</PackageTags>
+    <Version>1.0.0</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -11,8 +19,15 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="JwsDetachedStreaming" Version="1.1.0" />
+    <PackageReference Include="JwsDetachedStreaming" Version="1.1.1" />
     <PackageReference Include="Microsoft.IO.RecyclableMemoryStream" Version="1.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\JwsDetachedStreaming\LICENSE">
+      <Pack>True</Pack>
+      <PackagePath></PackagePath>
+    </None>
   </ItemGroup>
 
 </Project>

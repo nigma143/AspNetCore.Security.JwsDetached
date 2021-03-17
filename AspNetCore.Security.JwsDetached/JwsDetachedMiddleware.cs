@@ -1,4 +1,7 @@
 ﻿using System;
+using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Threading.Tasks;
 using JwsDetachedStreaming;
 using Microsoft.AspNetCore.Http;
@@ -107,6 +110,45 @@ namespace AspNetCore.Security.JwsDetached
             {
                 payloadStream.Position = beforePayloadPosition;
             }
+        }
+
+        public JObject? Read(string jwsDetached, IVerifierResolver verifierResolver, Stream payloadStream)
+        {
+            var parts = jwsDetached.Split('.');
+            if (parts.Length != 3)
+            {
+                throw new FormatException("Expected three segments");
+            }
+
+            var encodedHeaderBytes = Encoding.UTF8.GetBytes(parts[0]);
+
+            var header = JObject.Parse(
+                Encoding.UTF8.GetString(
+                    Base64UrlEncoder.Decode(encodedHeaderBytes)));
+            // part[1] is detached payload
+            var signature = Base64UrlEncoder.DecodeFromString(parts[2]);
+
+            using var encodedPayloadStream = new CryptoStream(
+                payloadStream,
+                new ToBase64UrlTransform(),
+                CryptoStreamMode.Read,
+                leaveOpen: true);
+
+            var verifier = verifierResolver.Resolve(header);
+
+            var verify = verifier.Verify(
+                new CompositeReadStream(
+                    new[] { encodedHeaderBytes, new byte[] { 0xE2 } }, //E2 - dot byte
+                    encodedPayloadStream,
+                    leaveOpen: true),
+                signature);
+
+            if (!verify)
+            {
+                return null;
+            }
+
+            return header;
         }
 
         private void SignResponse(HttpResponse response, SignContext signContext)
