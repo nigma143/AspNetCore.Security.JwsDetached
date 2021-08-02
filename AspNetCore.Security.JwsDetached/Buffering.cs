@@ -33,11 +33,11 @@ namespace AspNetCore.Security.JwsDetached
             switch (options.ResponseBufferingType)
             {
                 case null:
-                case BufferingType.Memory:
-                    return EnableResponseMemoryBuffering(response);
-
                 case BufferingType.File:
                     return EnableResponseFileBuffering(response, options.ResponseFileBufferingOptions);
+
+                case BufferingType.Memory:
+                    return EnableResponseMemoryBuffering(response);
                     
                 default:
                     throw new ArgumentOutOfRangeException();
