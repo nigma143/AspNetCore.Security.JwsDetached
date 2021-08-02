@@ -48,7 +48,7 @@ namespace AspNetCore.Security.JwsDetached
         private static IAsyncDisposable EnableRequestFileBuffering(HttpRequest request, FileBufferingOptions? options = null)
         {
             var body = request.Body;
-            if (body.CanSeek)
+            if (body.CanRead && body.CanSeek)
             {
                 return new DummyDispose();
             }
@@ -101,7 +101,7 @@ namespace AspNetCore.Security.JwsDetached
         private static IAsyncDisposable EnableResponseFileBuffering(HttpResponse response, FileBufferingOptions? options = null)
         {
             var body = response.Body;
-            if (body.CanSeek)
+            if ((body.CanSeek && body.CanRead) || body is FileBufferingWriteStream)
             {
                 return new DummyDispose();
             }
@@ -133,7 +133,7 @@ namespace AspNetCore.Security.JwsDetached
         public static IAsyncDisposable EnableResponseMemoryBuffering(HttpResponse response)
         {
             var body = response.Body;
-            if (body.CanRead && body.CanSeek)
+            if ((body.CanSeek && body.CanRead) || body is FileBufferingWriteStream)
             {
                 return new DummyDispose();
             }
