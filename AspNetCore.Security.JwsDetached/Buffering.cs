@@ -37,8 +37,7 @@ namespace AspNetCore.Security.JwsDetached
                     return EnableResponseMemoryBuffering(response);
 
                 case BufferingType.File:
-                    throw new NotSupportedException("Response file buffering not supported");
-                    //return EnableResponseFileBuffering(response, options.ResponseFileBufferingOptions);
+                    return EnableResponseFileBuffering(response, options.ResponseFileBufferingOptions);
                     
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -60,7 +59,7 @@ namespace AspNetCore.Security.JwsDetached
             var tempDirectory = options?.TmpFileDirectory ?? AspNetCoreTempDirectory.TempDirectory;
 
             var originRequestStream = request.Body;
-
+            
             var fileStream = new FileBufferingReadStream(body, bufferThreshold, bufferLimit, () => tempDirectory);
             request.Body = fileStream;
 
@@ -97,8 +96,7 @@ namespace AspNetCore.Security.JwsDetached
                     await memoryStream.DisposeAsync();
                 });
         }
-
-        /*
+        
         private static IAsyncDisposable EnableResponseFileBuffering(HttpResponse response, FileBufferingOptions? options = null)
         {
             var body = response.Body;
@@ -130,7 +128,6 @@ namespace AspNetCore.Security.JwsDetached
                     response.Body = originResponseStream;
                 });
         }
-        */
         
         private static IAsyncDisposable EnableResponseMemoryBuffering(HttpResponse response)
         {

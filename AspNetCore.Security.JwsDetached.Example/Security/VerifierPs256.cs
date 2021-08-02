@@ -1,12 +1,18 @@
-﻿using System.IO;
+﻿using System;
+using System.Buffers;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using System.Threading;
+using System.Threading.Tasks;
 using JwsDetachedStreaming;
 
 namespace AspNetCore.Security.JwsDetached.Example.Security
 {
-    class VerifierPs256 : IVerifier
+    class VerifierPs256 : Verifier
     {
+        private readonly HashAlgorithm _hashAlgorithm = SHA256.Create();
+
         private readonly X509Certificate2 _certificate;
 
         public VerifierPs256(X509Certificate2 certificate)
@@ -14,13 +20,35 @@ namespace AspNetCore.Security.JwsDetached.Example.Security
             _certificate = certificate;
         }
 
-        public bool Verify(Stream inputStream, byte[] signature)
+        public override ValueTask WriteInputAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
-            using var sha256 = SHA256.Create();
-            var hash = sha256.ComputeHash(inputStream);
+            if (MemoryMarshal.TryGetArray(buffer, out ArraySegment<byte> array))
+            {
+                _hashAlgorithm.TransformBlock(array.Array!, array.Offset, array.Count, null, 0);
+            }
+            else
+            {
+                byte[] sharedBuffer = ArrayPool<byte>.Shared.Rent(buffer.Length);
+                buffer.Span.CopyTo(sharedBuffer);
+                _hashAlgorithm.TransformBlock(sharedBuffer, 0, buffer.Length, null, 0);
+            }
+
+            return new ValueTask();
+        }
+
+        public override Task<bool> VerifyAsync(ReadOnlyMemory<byte> signature, CancellationToken cancellationToken = default)
+        {
+            _hashAlgorithm.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+
+            var hash = _hashAlgorithm.Hash;
 
             using var privateKey = _certificate.GetRSAPrivateKey();
-            return privateKey.VerifyHash(hash, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+            return Task.FromResult(privateKey.VerifyHash(hash, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pss));
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            _hashAlgorithm.Dispose();
         }
     }
 }

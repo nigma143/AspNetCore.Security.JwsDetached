@@ -11,17 +11,14 @@ namespace AspNetCore.Security.JwsDetached
 
     public class SignContext 
     {
-        public string Algorithm { get; }
-
         public JObject Header { get; }
 
-        public ISignerResolver SignerResolver { get; }
+        public ISignerFactory SignerFactory { get; }
 
-        public SignContext(string algorithm, JObject header, ISignerResolver signerResolver)
+        public SignContext(JObject header, ISignerFactory signerFactory)
         {
-            Algorithm = algorithm;
             Header = header;
-            SignerResolver = signerResolver;
+            SignerFactory = signerFactory;
         }
     }
 }

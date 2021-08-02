@@ -7,7 +7,12 @@ namespace AspNetCore.Security.JwsDetached.Example.Security
     {
         public SignContext? Select(HttpContext context)
         {
-            return new SignContext("PS256", new JObject(), new SignerResolver());
+            return new SignContext(
+                new JObject()
+                {
+                    {"alg", "PS256"}
+                },
+                new SignerFactory());
         }
     }
 }

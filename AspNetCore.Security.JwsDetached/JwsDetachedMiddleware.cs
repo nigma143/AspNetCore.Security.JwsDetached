@@ -1,9 +1,9 @@
 ﻿using System;
 using System.IO;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using JwsDetachedStreaming;
+using JwsDetachedStreaming.IO;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
@@ -42,20 +42,19 @@ namespace AspNetCore.Security.JwsDetached
                 {
                     requestBuffering = Buffering.EnableRequestBufferingIfRequired(context.Request, _options.Buffering);
 
-                    VerifyRequest(context.Request, verifierResolver);
+                    await VerifyRequestAsync(context.Request, verifierResolver);
                 }
-
+                
                 var signContext = _signContextSelector.Select(context);
                 if (signContext != null)
                 {
                     responseBuffering = Buffering.EnableResponseBufferingIfRequired(context.Response, _options.Buffering);
+
+                    await NextInvokeAndSignResponseAsync(context, signContext);
                 }
-
-                await _next.Invoke(context);
-
-                if (signContext != null)
+                else
                 {
-                    SignResponse(context.Response, signContext);
+                    await _next.Invoke(context);
                 }
             }
             finally
@@ -72,7 +71,7 @@ namespace AspNetCore.Security.JwsDetached
             }
         }
 
-        private void VerifyRequest(HttpRequest request, IVerifierResolver verifierResolver)
+        private async Task VerifyRequestAsync(HttpRequest request, IVerifierFactory verifierFactory)
         {
             if (!request.Headers.TryGetValue(
                 _options.HeaderName, out var jwsDetachedHeader))
@@ -87,14 +86,15 @@ namespace AspNetCore.Security.JwsDetached
             var beforePayloadPosition = payloadStream.Position;
             try
             {
-                payloadStream.Position = 0;
-
-                var handler = new JwsDetachedHandler();
-
+                await using var reader = await JwsDetachedReader.CreateAsync(
+                    Encoding.ASCII.GetBytes(jwsDetached),
+                    verifierFactory);
+                await payloadStream.CopyToAsync(reader.Payload);
+                
                 JObject? jwsHeader;
                 try
                 {
-                    jwsHeader = handler.Read(jwsDetached, verifierResolver, payloadStream);
+                    jwsHeader = await reader.ReadAsync();
                 }
                 catch (Exception ex)
                 {
@@ -112,64 +112,32 @@ namespace AspNetCore.Security.JwsDetached
             }
         }
 
-        public JObject? Read(string jwsDetached, IVerifierResolver verifierResolver, Stream payloadStream)
+        private async Task NextInvokeAndSignResponseAsync(HttpContext context, SignContext signContext)
         {
-            var parts = jwsDetached.Split('.');
-            if (parts.Length != 3)
-            {
-                throw new FormatException("Expected three segments");
-            }
+            await using var jwsDetached = new MemoryStream();
 
-            var encodedHeaderBytes = Encoding.UTF8.GetBytes(parts[0]);
+            await using var writer = await JwsDetachedWriter.CreateAsync(
+                jwsDetached,
+                signContext.Header,
+                signContext.SignerFactory);
 
-            var header = JObject.Parse(
-                Encoding.UTF8.GetString(
-                    Base64UrlEncoder.Decode(encodedHeaderBytes)));
-            // part[1] is detached payload
-            var signature = Base64UrlEncoder.DecodeFromString(parts[2]);
+            var bufferedResponseStream = context.Response.Body;
 
-            using var encodedPayloadStream = new CryptoStream(
-                payloadStream,
-                new ToBase64UrlTransform(),
-                CryptoStreamMode.Read,
-                leaveOpen: true);
+            await using var multiStream = new MultiWriteStream(
+                writer.Payload, bufferedResponseStream);
 
-            var verifier = verifierResolver.Resolve(header);
-
-            var verify = verifier.Verify(
-                new CompositeReadStream(
-                    new[] { encodedHeaderBytes, new byte[] { 0xE2 } }, //E2 - dot byte
-                    encodedPayloadStream,
-                    leaveOpen: true),
-                signature);
-
-            if (!verify)
-            {
-                return null;
-            }
-
-            return header;
-        }
-
-        private void SignResponse(HttpResponse response, SignContext signContext)
-        {
-            var payloadStream = response.Body;
-
-            var beforePayloadPosition = payloadStream.Position;
+            context.Response.Body = multiStream;
             try
             {
-                payloadStream.Position = 0;
-
-                var handler = new JwsDetachedHandler();
-                var jwsDetached = handler.Write(
-                    signContext.Header, signContext.Algorithm, signContext.SignerResolver, payloadStream);
-
-                response.Headers[_options.HeaderName] = jwsDetached;
+                await _next.Invoke(context);
             }
             finally
             {
-                payloadStream.Position = beforePayloadPosition;
+                context.Response.Body = bufferedResponseStream;
             }
+
+            await writer.Finish();
+            context.Response.Headers[_options.HeaderName] = Encoding.ASCII.GetString(jwsDetached.ToArray());
         }
     }
 }

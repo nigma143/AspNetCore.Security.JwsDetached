@@ -5,6 +5,6 @@ namespace AspNetCore.Security.JwsDetached
 {
     public interface IVerifierResolverSelector
     {
-        IVerifierResolver? Select(HttpContext context);
+        IVerifierFactory? Select(HttpContext context);
     }
 }

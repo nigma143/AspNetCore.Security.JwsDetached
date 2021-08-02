@@ -1,10 +1,13 @@
 using System;
+using System.Buffers;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using AspNetCore.Security.JwsDetached.DependencyInjection;
 using JwsDetachedStreaming;
@@ -32,7 +35,22 @@ namespace AspNetCore.Security.JwsDetached.Test
                         .UseTestServer()
                         .ConfigureServices(services =>
                         {
-                            services.AddJwsDetached<VerifierResolverSelector, SignContextSelector>();
+                            services.AddJwsDetached<VerifierResolverSelector, SignContextSelector>(
+                                options =>
+                                {
+                                    options.Buffering.RequestBufferingType = BufferingType.File;
+                                    options.Buffering.RequestFileBufferingOptions =
+                                        new FileBufferingOptions()
+                                        {
+                                            BufferThreshold = 1
+                                        };
+                                    options.Buffering.ResponseBufferingType = BufferingType.File;
+                                    options.Buffering.ResponseFileBufferingOptions =
+                                        new FileBufferingOptions()
+                                        {
+                                            BufferThreshold = 1
+                                        };
+                                });
                             services.AddControllers();
                         })
                         .Configure(app =>
@@ -46,11 +64,15 @@ namespace AspNetCore.Security.JwsDetached.Test
                 })
                 .StartAsync();
             
-            host.GetTestServer().AllowSynchronousIO = true;
-            
-            var handler = new JwsDetachedHandler();
-            var jwsDetached = handler.Write(new JObject(), "PS256", new SignerResolver(),
-                new MemoryStream(Encoding.UTF8.GetBytes("Request body")));
+            await using var payload = new MemoryStream(Encoding.UTF8.GetBytes("Request body"));
+            await using var output = new MemoryStream();
+
+            await using var writer = await JwsDetachedWriter.CreateAsync(output, "PS256", new SignerFactory());
+            payload.Position = 0;
+            await payload.CopyToAsync(writer.Payload);
+            await writer.Finish();
+
+            var jwsDetached = Encoding.ASCII.GetString(output.ToArray());
 
             var client = host.GetTestClient();
             client.DefaultRequestHeaders.Add("x-jws-signature", jwsDetached);
@@ -59,10 +81,14 @@ namespace AspNetCore.Security.JwsDetached.Test
             response.EnsureSuccessStatusCode();
 
             Assert.IsTrue(response.Headers.Contains("x-jws-signature"));
-            
-            var jwsHeaders = handler.Read(String.Join("", response.Headers.GetValues("x-jws-signature")), 
-                new VerifierResolver(),
-                await response.Content.ReadAsStreamAsync());
+
+            await using var reader = await JwsDetachedReader.CreateAsync(
+                Encoding.ASCII.GetBytes(
+                    String.Join("", response.Headers.GetValues("x-jws-signature"))),
+                new VerifierFactory());
+            await response.Content.CopyToAsync(reader.Payload);
+
+            var jwsHeaders = await reader.ReadAsync();
 
             Assert.IsNotNull(jwsHeaders);
 
@@ -75,9 +101,9 @@ namespace AspNetCore.Security.JwsDetached.Test
 
     class VerifierResolverSelector : IVerifierResolverSelector
     {
-        public IVerifierResolver? Select(HttpContext context)
+        public IVerifierFactory? Select(HttpContext context)
         {
-            return new VerifierResolver();
+            return new VerifierFactory();
         }
     }
 
@@ -85,20 +111,25 @@ namespace AspNetCore.Security.JwsDetached.Test
     {
         public SignContext? Select(HttpContext context)
         {
-            return new SignContext("PS256", new JObject(), new SignerResolver());
+            return new SignContext(
+                new JObject()
+                {
+                    {"alg", "PS256"}
+                }, 
+                new SignerFactory());
         }
     }
 
-    class SignerResolver : ISignerResolver
+    class SignerFactory : ISignerFactory
     {
         private readonly X509Certificate2 _certificate;
 
-        public SignerResolver()
+        public SignerFactory()
         {
             _certificate = new X509Certificate2("Provision/cert.pfx.test", "123456");
         }
 
-        public ISigner Resolve(JObject header)
+        public Signer Create(JObject header)
         {
             return header.GetValue("alg").ToString() switch
             {
@@ -108,8 +139,10 @@ namespace AspNetCore.Security.JwsDetached.Test
         }
     }
 
-    class SignerPs256 : ISigner
+    class SignerPs256 : Signer
     {
+        private readonly HashAlgorithm _hashAlgorithm = SHA256.Create();
+
         private readonly X509Certificate2 _certificate;
 
         public SignerPs256(X509Certificate2 certificate)
@@ -117,26 +150,48 @@ namespace AspNetCore.Security.JwsDetached.Test
             _certificate = certificate;
         }
 
-        public byte[] Sign(Stream inputStream)
+        public override ValueTask WriteInputAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
-            using var sha256 = SHA256.Create();
-            var hash = sha256.ComputeHash(inputStream);
+            if (MemoryMarshal.TryGetArray(buffer, out ArraySegment<byte> array))
+            {
+                _hashAlgorithm.TransformBlock(array.Array!, array.Offset, array.Count, null, 0);
+            }
+            else
+            {
+                byte[] sharedBuffer = ArrayPool<byte>.Shared.Rent(buffer.Length);
+                buffer.Span.CopyTo(sharedBuffer);
+                _hashAlgorithm.TransformBlock(sharedBuffer, 0, buffer.Length, null, 0);
+            }
+
+            return new ValueTask();
+        }
+
+        public override Task<byte[]> GetSignatureAsync(CancellationToken cancellationToken = default)
+        {
+            _hashAlgorithm.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+
+            var hash = _hashAlgorithm.Hash;
 
             using var privateKey = _certificate.GetRSAPrivateKey();
-            return privateKey.SignHash(hash, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+            return Task.FromResult(privateKey.SignHash(hash, HashAlgorithmName.SHA256, RSASignaturePadding.Pss));
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            _hashAlgorithm.Dispose();
         }
     }
 
-    class VerifierResolver : IVerifierResolver
+    class VerifierFactory : IVerifierFactory
     {
         private readonly X509Certificate2 _certificate;
 
-        public VerifierResolver()
+        public VerifierFactory()
         {
             _certificate = new X509Certificate2("Provision/cert.pfx.test", "123456");
         }
 
-        public IVerifier Resolve(JObject header)
+        public Verifier Create(JObject header)
         {
             return header.GetValue("alg").ToString() switch
             {
@@ -145,9 +200,11 @@ namespace AspNetCore.Security.JwsDetached.Test
             };
         }
     }
-    
-    class VerifierPs256 : IVerifier
+
+    class VerifierPs256 : Verifier
     {
+        private readonly HashAlgorithm _hashAlgorithm = SHA256.Create();
+
         private readonly X509Certificate2 _certificate;
 
         public VerifierPs256(X509Certificate2 certificate)
@@ -155,13 +212,35 @@ namespace AspNetCore.Security.JwsDetached.Test
             _certificate = certificate;
         }
 
-        public bool Verify(Stream inputStream, byte[] signature)
+        public override ValueTask WriteInputAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
         {
-            using var sha256 = SHA256.Create();
-            var hash = sha256.ComputeHash(inputStream);
+            if (MemoryMarshal.TryGetArray(buffer, out ArraySegment<byte> array))
+            {
+                _hashAlgorithm.TransformBlock(array.Array!, array.Offset, array.Count, null, 0);
+            }
+            else
+            {
+                byte[] sharedBuffer = ArrayPool<byte>.Shared.Rent(buffer.Length);
+                buffer.Span.CopyTo(sharedBuffer);
+                _hashAlgorithm.TransformBlock(sharedBuffer, 0, buffer.Length, null, 0);
+            }
+
+            return new ValueTask();
+        }
+
+        public override Task<bool> VerifyAsync(ReadOnlyMemory<byte> signature, CancellationToken cancellationToken = default)
+        {
+            _hashAlgorithm.TransformFinalBlock(Array.Empty<byte>(), 0, 0);
+
+            var hash = _hashAlgorithm.Hash;
 
             using var privateKey = _certificate.GetRSAPrivateKey();
-            return privateKey.VerifyHash(hash, signature, HashAlgorithmName.SHA256, RSASignaturePadding.Pss);
+            return Task.FromResult(privateKey.VerifyHash(hash, signature.Span, HashAlgorithmName.SHA256, RSASignaturePadding.Pss));
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            _hashAlgorithm.Dispose();
         }
     }
 }
