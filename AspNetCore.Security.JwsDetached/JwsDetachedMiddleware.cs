@@ -44,7 +44,7 @@ namespace AspNetCore.Security.JwsDetached
 
                     await VerifyRequestAsync(context.Request, verifierResolver);
                 }
-                
+
                 var signContext = _signContextSelector.Select(context);
                 if (signContext != null)
                 {
@@ -90,7 +90,7 @@ namespace AspNetCore.Security.JwsDetached
                     Encoding.ASCII.GetBytes(jwsDetached),
                     verifierFactory);
                 await payloadStream.CopyToAsync(reader.Payload);
-                
+
                 JObject? jwsHeader;
                 try
                 {
@@ -121,19 +121,9 @@ namespace AspNetCore.Security.JwsDetached
                 signContext.Header,
                 signContext.SignerFactory);
 
-            var bufferedResponseStream = context.Response.Body;
-
-            await using var multiStream = new MultiWriteStream(
-                writer.Payload, bufferedResponseStream);
-
-            context.Response.Body = multiStream;
-            try
+            await using (Buffering.SlidingWriteStream(context.Response, writer.Payload))
             {
                 await _next.Invoke(context);
-            }
-            finally
-            {
-                context.Response.Body = bufferedResponseStream;
             }
 
             await writer.Finish();

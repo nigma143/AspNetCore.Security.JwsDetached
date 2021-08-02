@@ -2,6 +2,7 @@
 using System.Buffers;
 using System.IO;
 using System.Threading.Tasks;
+using JwsDetachedStreaming.IO;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.IO;
@@ -72,7 +73,7 @@ namespace AspNetCore.Security.JwsDetached
                 });
         }
 
-        private static IAsyncDisposable EnableRequestMemoryBuffering(HttpRequest request)
+        public static IAsyncDisposable EnableRequestMemoryBuffering(HttpRequest request)
         {
             var body = request.Body;
             if (body.CanRead && body.CanSeek)
@@ -128,8 +129,8 @@ namespace AspNetCore.Security.JwsDetached
                     response.Body = originResponseStream;
                 });
         }
-        
-        private static IAsyncDisposable EnableResponseMemoryBuffering(HttpResponse response)
+
+        public static IAsyncDisposable EnableResponseMemoryBuffering(HttpResponse response)
         {
             var body = response.Body;
             if (body.CanRead && body.CanSeek)
@@ -152,6 +153,24 @@ namespace AspNetCore.Security.JwsDetached
                     await responseBody.DisposeAsync();
 
                     response.Body = originResponseStream;
+                });
+        }
+
+        public static IAsyncDisposable SlidingWriteStream(HttpResponse response, Stream stream)
+        {
+            var originStream = response.Body;
+
+            var multiStream = new MultiWriteStream(
+                stream, originStream);
+
+            response.Body = multiStream;
+
+            return new ActionAtDispose(
+                async () =>
+                {
+                    await multiStream.DisposeAsync();
+
+                    response.Body = originStream;
                 });
         }
     }
