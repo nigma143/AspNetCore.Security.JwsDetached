@@ -1,10 +1,8 @@
 ﻿using System;
-using System.Buffers;
-using System.IO;
 using System.Threading.Tasks;
+using AspNetCore.Security.JwsDetached.IO;
 using JwsDetachedStreaming.IO;
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.IO;
 
 namespace AspNetCore.Security.JwsDetached
@@ -17,12 +15,15 @@ namespace AspNetCore.Security.JwsDetached
         {
             switch (options.RequestBufferingType)
             {
+                case BufferingType.Disabled:
+                    return new DummyDispose();
+
                 case null:
                 case BufferingType.File:
                     return EnableRequestFileBuffering(request, options.RequestFileBufferingOptions);
 
                 case BufferingType.Memory:
-                    return EnableRequestMemoryBuffering(request);
+                    return EnableRequestMemoryBuffering(request, options.RequestMemoryBufferingOptions);
 
                 default:
                     throw new ArgumentOutOfRangeException();
@@ -33,13 +34,16 @@ namespace AspNetCore.Security.JwsDetached
         {
             switch (options.ResponseBufferingType)
             {
+                case BufferingType.Disabled:
+                    return new DummyDispose();
+
                 case null:
                 case BufferingType.File:
                     return EnableResponseFileBuffering(response, options.ResponseFileBufferingOptions);
 
                 case BufferingType.Memory:
-                    return EnableResponseMemoryBuffering(response);
-                    
+                    return EnableResponseMemoryBuffering(response, options.ResponseMemoryBufferingOptions);
+
                 default:
                     throw new ArgumentOutOfRangeException();
             }
@@ -59,8 +63,14 @@ namespace AspNetCore.Security.JwsDetached
             var bufferLimit = options?.BufferLimit;
             var tempDirectory = options?.TmpFileDirectory ?? AspNetCoreTempDirectory.TempDirectory;
 
+            if (request.ContentLength.HasValue && bufferLimit.HasValue &&
+                request.ContentLength > bufferLimit)
+            {
+                throw new ReadBufferLimitException("Content length body too large");
+            }
+
             var originRequestStream = request.Body;
-            
+
             var fileStream = new FileBufferingReadStream(body, bufferThreshold, bufferLimit, () => tempDirectory);
             request.Body = fileStream;
 
@@ -73,7 +83,7 @@ namespace AspNetCore.Security.JwsDetached
                 });
         }
 
-        public static IAsyncDisposable EnableRequestMemoryBuffering(HttpRequest request)
+        public static IAsyncDisposable EnableRequestMemoryBuffering(HttpRequest request, MemoryBufferingOptions? options = null)
         {
             var body = request.Body;
             if (body.CanRead && body.CanSeek)
@@ -81,12 +91,19 @@ namespace AspNetCore.Security.JwsDetached
                 return new DummyDispose();
             }
 
+            var bufferLimit = options?.BufferLimit;
+
+            if (request.ContentLength.HasValue && bufferLimit.HasValue &&
+                request.ContentLength > bufferLimit)
+            {
+                throw new ReadBufferLimitException("Content length body too large");
+            }
+
             var originRequestStream = request.Body;
 
-            var memoryStream = MemoryStreamManager.GetStream();
-            originRequestStream.CopyToAsync(memoryStream);
+            var memoryStream = new MemoryBufferingReadStream(
+                originRequestStream, () => MemoryStreamManager.GetStream(), bufferLimit);
 
-            memoryStream.Position = 0;
             request.Body = memoryStream;
 
             return new ActionAtDispose(
@@ -97,7 +114,7 @@ namespace AspNetCore.Security.JwsDetached
                     await memoryStream.DisposeAsync();
                 });
         }
-        
+
         private static IAsyncDisposable EnableResponseFileBuffering(HttpResponse response, FileBufferingOptions? options = null)
         {
             var body = response.Body;
@@ -116,21 +133,23 @@ namespace AspNetCore.Security.JwsDetached
 
             var fileStream = new FileBufferingWriteStream(bufferThreshold, bufferLimit, () => tempDirectory);
             response.Body = fileStream;
-            
+
             return new ActionAtDispose(
                 async () =>
                 {
                     var responseBody = (FileBufferingWriteStream)response.Body;
 
-                    await responseBody.DrainBufferAsync(originResponseStream);
-
-                    await responseBody.DisposeAsync();
+                    if (!responseBody.Disposed)
+                    {
+                        await responseBody.DrainBufferAsync(originResponseStream);
+                        await responseBody.DisposeAsync();
+                    }
 
                     response.Body = originResponseStream;
                 });
         }
 
-        public static IAsyncDisposable EnableResponseMemoryBuffering(HttpResponse response)
+        public static IAsyncDisposable EnableResponseMemoryBuffering(HttpResponse response, MemoryBufferingOptions? options = null)
         {
             var body = response.Body;
             if ((body.CanSeek && body.CanRead) || body is FileBufferingWriteStream)
@@ -138,9 +157,11 @@ namespace AspNetCore.Security.JwsDetached
                 return new DummyDispose();
             }
 
+            var bufferLimit = options?.BufferLimit;
+
             var originResponseStream = response.Body;
 
-            var memoryStream = MemoryStreamManager.GetStream();
+            var memoryStream = new MemoryBufferingWriteStream(() => MemoryStreamManager.GetStream(), bufferLimit);
             response.Body = memoryStream;
 
             return new ActionAtDispose(
@@ -156,7 +177,7 @@ namespace AspNetCore.Security.JwsDetached
                 });
         }
 
-        public static IAsyncDisposable SlidingWriteStream(HttpResponse response, Stream stream)
+        public static IAsyncDisposable SlidingWriteStream(HttpResponse response, System.IO.Stream stream)
         {
             var originStream = response.Body;
 

@@ -2,8 +2,8 @@
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using AspNetCore.Security.JwsDetached.IO;
 using JwsDetachedStreaming;
-using JwsDetachedStreaming.IO;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Options;
 using Newtonsoft.Json.Linq;
@@ -56,6 +56,16 @@ namespace AspNetCore.Security.JwsDetached
                 {
                     await _next.Invoke(context);
                 }
+            }
+            catch (ReadBufferLimitException)
+            {
+                context.Response.StatusCode = StatusCodes.Status413PayloadTooLarge;
+                await context.Response.WriteAsync("Request body too large");
+            }
+            catch (WriteBufferLimitException)
+            {
+                context.Response.StatusCode = StatusCodes.Status502BadGateway;
+                await context.Response.WriteAsync("Gateway response body too large");
             }
             finally
             {
