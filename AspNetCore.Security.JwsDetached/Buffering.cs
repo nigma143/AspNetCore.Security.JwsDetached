@@ -51,8 +51,7 @@ namespace AspNetCore.Security.JwsDetached
 
         private static IAsyncDisposable EnableRequestFileBuffering(HttpRequest request, FileBufferingOptions? options = null)
         {
-            var body = request.Body;
-            if (body.CanRead && body.CanSeek)
+            if (IsRequestBuffered(request))
             {
                 return new DummyDispose();
             }
@@ -71,8 +70,12 @@ namespace AspNetCore.Security.JwsDetached
 
             var originRequestStream = request.Body;
 
-            var fileStream = new FileBufferingReadStream(body, bufferThreshold, bufferLimit, () => tempDirectory);
+            var fileStream = new FileBufferingReadStream(
+                originRequestStream, bufferThreshold, bufferLimit, () => tempDirectory);
             request.Body = fileStream;
+
+            request.HttpContext.Features.Set(
+                new RequestBufferingFeature(BufferingType.File));
 
             return new ActionAtDispose(
                 async () =>
@@ -85,8 +88,7 @@ namespace AspNetCore.Security.JwsDetached
 
         public static IAsyncDisposable EnableRequestMemoryBuffering(HttpRequest request, MemoryBufferingOptions? options = null)
         {
-            var body = request.Body;
-            if (body.CanRead && body.CanSeek)
+            if (IsRequestBuffered(request))
             {
                 return new DummyDispose();
             }
@@ -103,8 +105,10 @@ namespace AspNetCore.Security.JwsDetached
 
             var memoryStream = new MemoryBufferingReadStream(
                 originRequestStream, () => MemoryStreamManager.GetStream(), bufferLimit);
-
             request.Body = memoryStream;
+
+            request.HttpContext.Features.Set(
+                new RequestBufferingFeature(BufferingType.Memory));
 
             return new ActionAtDispose(
                 async () =>
@@ -117,8 +121,7 @@ namespace AspNetCore.Security.JwsDetached
 
         private static IAsyncDisposable EnableResponseFileBuffering(HttpResponse response, FileBufferingOptions? options = null)
         {
-            var body = response.Body;
-            if ((body.CanSeek && body.CanRead) || body is FileBufferingWriteStream)
+            if (IsResponseBuffered(response))
             {
                 return new DummyDispose();
             }
@@ -131,8 +134,12 @@ namespace AspNetCore.Security.JwsDetached
 
             var originResponseStream = response.Body;
 
-            var fileStream = new FileBufferingWriteStream(bufferThreshold, bufferLimit, () => tempDirectory);
+            var fileStream = new FileBufferingWriteStream(
+                bufferThreshold, bufferLimit, () => tempDirectory);
             response.Body = fileStream;
+
+            response.HttpContext.Features.Set(
+                new ResponseBufferingFeature(BufferingType.File));
 
             return new ActionAtDispose(
                 async () =>
@@ -151,8 +158,7 @@ namespace AspNetCore.Security.JwsDetached
 
         public static IAsyncDisposable EnableResponseMemoryBuffering(HttpResponse response, MemoryBufferingOptions? options = null)
         {
-            var body = response.Body;
-            if ((body.CanSeek && body.CanRead) || body is FileBufferingWriteStream)
+            if (IsResponseBuffered(response))
             {
                 return new DummyDispose();
             }
@@ -161,8 +167,12 @@ namespace AspNetCore.Security.JwsDetached
 
             var originResponseStream = response.Body;
 
-            var memoryStream = new MemoryBufferingWriteStream(() => MemoryStreamManager.GetStream(), bufferLimit);
+            var memoryStream = new MemoryBufferingWriteStream(
+                () => MemoryStreamManager.GetStream(), bufferLimit);
             response.Body = memoryStream;
+
+            response.HttpContext.Features.Set(
+                new ResponseBufferingFeature(BufferingType.Memory));
 
             return new ActionAtDispose(
                 async () =>
@@ -193,6 +203,38 @@ namespace AspNetCore.Security.JwsDetached
 
                     response.Body = originStream;
                 });
+        }
+
+        public static bool IsRequestBuffered(HttpRequest request)
+        {
+            return request.HttpContext.Features.Get<RequestBufferingFeature>() != null;
+        }
+
+        public static BufferingType GetRequestBufferedType(HttpRequest request)
+        {
+            var feature = request.HttpContext.Features.Get<RequestBufferingFeature>();
+            if (feature == null)
+            {
+                return BufferingType.Disabled;
+            }
+
+            return feature.Type;
+        }
+
+        public static bool IsResponseBuffered(HttpResponse response)
+        {
+            return response.HttpContext.Features.Get<ResponseBufferingFeature>() != null;
+        }
+
+        public static BufferingType GetResponseBufferedType(HttpResponse response)
+        {
+            var feature = response.HttpContext.Features.Get<ResponseBufferingFeature>();
+            if (feature == null)
+            {
+                return BufferingType.Disabled;
+            }
+
+            return feature.Type;
         }
     }
 

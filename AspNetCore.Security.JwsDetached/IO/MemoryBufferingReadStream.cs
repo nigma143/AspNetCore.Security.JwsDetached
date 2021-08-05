@@ -14,12 +14,12 @@ namespace AspNetCore.Security.JwsDetached.IO
 
         private bool _completelyBuffered = false;
 
-        public MemoryBufferingReadStream(System.IO.Stream source, Func<MemoryStream> destinationFn, 
+        public MemoryBufferingReadStream(System.IO.Stream source, Func<MemoryStream> destinationFn,
             long? bufferLimit = null)
         {
             _source = source;
             _destination = destinationFn();
-            
+
             _bufferLimit = bufferLimit;
         }
 
@@ -29,7 +29,7 @@ namespace AspNetCore.Security.JwsDetached.IO
         }
 
         public override Task<int> ReadAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken)
-        { 
+        {
             return ReadAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
         }
 
@@ -46,15 +46,15 @@ namespace AspNetCore.Security.JwsDetached.IO
             }
 
             var read = await _source.ReadAsync(buffer, cancellationToken);
-            
+
+            if (_bufferLimit.HasValue && _bufferLimit - read < _destination.Length)
+            {
+                throw new ReadBufferLimitException("Buffer limit exceeded");
+            }
+
             if (read > 0)
             {
-                if (_bufferLimit.HasValue && _bufferLimit - read < _destination.Length)
-                {
-                    throw new ReadBufferLimitException("Buffer limit exceeded");
-                }
-
-                _destination.Write(buffer.Span);
+                _destination.Write(buffer.Span.Slice(0, read));
             }
             else
             {
@@ -63,7 +63,7 @@ namespace AspNetCore.Security.JwsDetached.IO
 
             return read;
         }
-        
+
         public override int Read(Span<byte> buffer)
         {
             if (_completelyBuffered)
@@ -73,14 +73,14 @@ namespace AspNetCore.Security.JwsDetached.IO
 
             var read = _source.Read(buffer);
 
+            if (_bufferLimit.HasValue && _bufferLimit - read < _destination.Length)
+            {
+                throw new ReadBufferLimitException("Buffer limit exceeded");
+            }
+
             if (read > 0)
             {
-                if (_bufferLimit.HasValue && _bufferLimit - read < _destination.Length)
-                {
-                    throw new ReadBufferLimitException("Buffer limit exceeded");
-                }
-
-                _destination.Write(buffer);
+                _destination.Write(buffer.Slice(0, read));
             }
             else
             {
